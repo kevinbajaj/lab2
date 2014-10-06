@@ -118,7 +118,7 @@ app.use(function(req, res, next) {
 		  "location": 'strong-hall',
 		  "inventory": ['laptop'],
 		  "campus": campus,
-		  "id": 'Jeff'
+		  "id": 'Kevin'
 		};
 	}
 	next();
@@ -129,6 +129,7 @@ app.use(function(req, res, next) {
 app.get('/', function(req, res){
 	var agent = req.session.id;
 
+/*
 	connection.query('INSERT INTO Users (Name, Location, SID)' +
 					 'values (?, ?, ?)',
 					  [agents[agent].id, 
@@ -137,31 +138,38 @@ app.get('/', function(req, res){
 	  if (err) throw err;
 
 	});
-
-  
-/*
-	connection.query('SELECT * FROM Inventory WHERE Name = ?', 
-											 [name], function (err, inv) {
-				
-			agents[agent] = {
-				"id": agents[agent].id,
-
-			  };
-			});
 */
 
+	connection.query('SELECT * FROM Users WHERE name = ?', [agents[agent].id],
+	 function(err, rows) {
+		for(var i in rows)
+		{
+			console.log(rows[i].Location);
+			console.log(rows[i].SID);
+		}
+	});
+ 
+	connection.query('SELECT * FROM Inventory WHERE name = ?', [agents[agent].id],
+	 function(err, rows) {
+		for(var i in rows)
+		{	
+			console.log(rows[i].Inventory);
+		}
+	});
+
+	
+
+/*
 	for(var i in agents[agent].inventory){
 		connection.query('INSERT INTO Inventory (Name, Inventory)' +
 						 'values (?, ?)',
 						  [agents[agent].id, 
-						   'turtle'], function(err, rows, fields) {
+						   'monkey'], function(err, rows, fields) {
 		  if (err) throw err;
-
-	  //console.log('The solution is: ', rows[0].solution);
 	});		
 	}
 
-
+*/
 
 
 
