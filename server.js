@@ -3,10 +3,28 @@ var cookieParser = require('cookie-parser');
 var uuid = require('node-uuid');
 var extend = require('util')._extend;
 var path = require('path');
+var mysql = require('mysql');
 //externalize cookie secret
 var credentials = require('./credentials.js');
 var agents = {};
 var app = express();
+
+//create default campus object
+
+//populate agents with users from db.  
+
+//populate users' inventories and location
+
+//update 'what' at every location.
+
+var connection = mysql.createConnection({
+  host     : 'mysql.eecs.ku.edu',
+  user     : 'chogan',
+  password : '581!!'
+});
+
+connection.connect();
+connection.query('use chogan');
 
 app.use(cookieParser(credentials.cookieSecret));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -96,18 +114,64 @@ app.use(function(req, res, next) {
   //Add this agent to agents if it doesn't already exist
 	if(!agents.hasOwnProperty(agent)) {
 		agents[agent] = {
+		  "name": agent,
 		  "location": 'strong-hall',
 		  "inventory": ['laptop'],
-		  "campus": campus
+		  "campus": campus,
+		  "id": 'Jeff'
 		};
 	}
 	next();
 });
 
+
+
 app.get('/', function(req, res){
+	var agent = req.session.id;
+
+	connection.query('INSERT INTO Users (Name, Location, SID)' +
+					 'values (?, ?, ?)',
+					  [agents[agent].id, 
+					   agents[agent].location,
+					   agents[agent].name], function(err, rows, fields) {
+	  if (err) throw err;
+
+	});
+
+  
+/*
+	connection.query('SELECT * FROM Inventory WHERE Name = ?', 
+											 [name], function (err, inv) {
+				
+			agents[agent] = {
+				"id": agents[agent].id,
+
+			  };
+			});
+*/
+
+	for(var i in agents[agent].inventory){
+		connection.query('INSERT INTO Inventory (Name, Inventory)' +
+						 'values (?, ?)',
+						  [agents[agent].id, 
+						   'turtle'], function(err, rows, fields) {
+		  if (err) throw err;
+
+	  //console.log('The solution is: ', rows[0].solution);
+	});		
+	}
+
+
+
+
+
+
 	res.status(200);
+
 	res.sendFile(__dirname + "/index.html");
 });
+
+
 
 app.get('/:id', function(req, res){
 	var agent = req.session.id;
@@ -221,6 +285,8 @@ app.put('/:id/:item', function (req, res) {
 
 app.listen(3000);
 
+
+
 var dropbox = function(ix, room, req) {
 	var agent = req.session.id;
 	var campus = agents[agent].campus;
@@ -240,5 +306,3 @@ var dropbox = function(ix, room, req) {
 	}
 	room.what.push(item);
 };
-
-    
