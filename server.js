@@ -9,13 +9,7 @@ var credentials = require('./credentials.js');
 var agents = {};
 var app = express();
 
-//create default campus object
-
-//populate agents with users from db.  
-
-//populate users' inventories and location
-
-//update 'what' at every location.
+//TODO: update 'what' at every location.
 
 var connection = mysql.createConnection({
   host     : 'mysql.eecs.ku.edu',
@@ -36,9 +30,104 @@ app.use(require('express-session')({
 	genid: uuid.v1
 }));
 
-app.use(function(req, res, next) {
+app.get('/', function(req, res){
+	agents[req.session.id] = {
+		"location": "strong-hall",
+		"inventory": [],
+		"campus": [{ 
+			"id": "strong-hall",
+			"where": "StrongHall.jpg",
+			"next": {"east": "eaton-hall", "south": "dole-institute"},
+			"text": "Please log in."
+		}],
+	}
+	res.status(200);
+	res.sendFile(__dirname + "/index.html");
+});
+
+app.get('/:id', function(req, res){
 	var agent = req.session.id;
-	//give each agent its own private campus
+	var inventory = agents[agent].inventory;
+	var campus= agents[agent].campus;
+	
+	if (req.params.id == "inventory") {
+	    res.set({'Content-Type': 'application/json'});
+	    res.status(200);
+	    res.send(inventory);
+	    return;
+	}
+	
+	if (agents[agent].location == "jail") {
+		res.set({'Content-Type': 'application/json'});
+	    res.status(200);
+	    res.send(campus[campus.length - 1]);
+	    return;
+	}
+	
+	for (var i in campus) {
+		if (req.params.id == campus[i].id) {
+		    res.set({'Content-Type': 'application/json'});
+		    res.status(200);
+		    agents[agent].location = campus[i].id;
+		    res.send(campus[i]);
+		    return;
+		}
+	}
+	res.status(404);
+	res.send("not found, sorry");
+});
+
+app.get('/:id/interaction', function (req, res) {
+	var agent = req.session.id;
+	var peopleHere = [];
+	var location = req.params.id;
+
+	for(var i in agents) {
+		if(agents[i].location.id == location && i != agent) {
+			peopleHere.push(i);
+		}
+	}
+	res.set({'Content-Type': 'application/json'});
+	res.status(200);
+	res.send(peopleHere);
+	return;
+});
+
+app.get('/images/:name', function (req, res) {
+	res.status(200);
+	res.sendFile(__dirname + "/" + req.params.name);
+});
+
+app.delete('/:id/:item', function (req, res) {
+	var agent = req.session.id;
+	var campus = agents[agent].campus;
+	var inventory = agents[agent].inventory; 
+	for (var i in campus) {
+		if (req.params.id == campus[i].id) {
+		    res.set({'Content-Type': 'application/json'});
+		    var ix = -1;
+		    if (campus[i].what !== undefined) {
+					ix = campus[i].what.indexOf(req.params.item);
+		    }
+		    if (ix >= 0) {
+		      res.status(200);
+					inventory.push(campus[i].what[ix]); // stash
+				  res.send(inventory);
+					campus[i].what.splice(ix, 1); // room no longer has this
+					return;
+		    }
+		    res.status(200);
+		    res.send([]);
+		    return;
+		}
+	}
+	res.status(404);
+	res.send("location not found");
+});
+
+app.post('/login/:name', function (req, res) {
+	
+	var name = req.params.name;
 	var campus = [
 		{ 
 		  "id": "lied-center",
@@ -110,151 +199,101 @@ app.use(function(req, res, next) {
 		  "next": {},
 		  "text": "You've been put in prison!  Maybe you were framed..."
 		}
-  ];
-  //Add this agent to agents if it doesn't already exist
-	if(!agents.hasOwnProperty(agent)) {
-		agents[agent] = {
-		  "name": agent,
-		  "location": 'strong-hall',
-		  "inventory": ['laptop'],
-		  "campus": campus,
-		  "id": 'Kevin'
-		};
-	}
-	next();
+    ];
+
+	connection.query('SELECT * FROM Users WHERE Name = ?', [name], function(err, results) {
+		if (results.length != 0) {
+			connection.query('SELECT * FROM Inventory WHERE Name = ?', 
+											 [name], function (err, inv) {
+				console.log(name + " already in db.");
+				agents[req.session.id] = {
+				  "name": name,
+				  "inventory": [inv[0]],//getInventory(inv)
+				  "location": results[0].location,
+				  "campus": campus
+			  };
+			});
+			if(err) {
+				console.log(err);
+			}
+		} else {
+			//Add this user to the database.
+			
+			connection.query('INSERT INTO Users (Name, Location) VALUES (?, ?)',
+							  [name, 'strong-hall'], function (err) {
+			  	console.log(name + " inserted into db.");
+			  	if(err) {
+			  		console.log(err);
+			  	}
+			});
+			connection.query('INSERT INTO Inventory (Name, Inventory) VALUES (?,?)',
+							  [name, 'laptop'], function (err) {
+				if(err) {
+					console.log(err);
+				}
+			});
+
+			//add this user to the agents in memory
+			agents[req.session.id] = {
+				"name": name,
+				"inventory": ['laptop'],
+				"location": "strong-hall",
+				"campus": campus
+			}
+		}
+	});
+
+	res.set({'Content-Type': 'application/json'});
+	res.status(200);
+	res.send([]);
 });
 
+app.put('/logout/:name', function (req, res) {
+	//TODO: Update the database with this user's info
 
-
-app.get('/', function(req, res){
 	var agent = req.session.id;
+	console.log(agents[agent].name);
+	//delete user's old inventory from database
 
-/*
-	connection.query('INSERT INTO Users (Name, Location, SID)' +
-					 'values (?, ?, ?)',
-					  [agents[agent].id, 
-					   agents[agent].location,
-					   agents[agent].name], function(err, rows, fields) {
-	  if (err) throw err;
+	connection.query('DELETE FROM Inventory WHERE name = ?', [agents[agent].name]);
 
-	});
-*/
+	//Insert user's inventory
 
-	connection.query('SELECT * FROM Users WHERE name = ?', [agents[agent].id],
-	 function(err, rows) {
-		for(var i in rows)
-		{
-			console.log(rows[i].Location);
-			console.log(rows[i].SID);
-		}
-	});
- 
-	connection.query('SELECT * FROM Inventory WHERE name = ?', [agents[agent].id],
-	 function(err, rows) {
-		for(var i in rows)
-		{	
-			console.log(rows[i].Inventory);
-		}
-	});
+	for(var i in agents[agent].inventory){
+		connection.query('INSERT INTO Inventory (Name, Inventory) VALUES (?, ?)',
+						  [agents[agent].name, 
+						   agents[agent].inventory[i]], function(err, rows, fields) {
+		  if (err) throw err;
+		});		
+	}
 
-	
 
 /*
 	for(var i in agents[agent].inventory){
-		connection.query('INSERT INTO Inventory (Name, Inventory)' +
-						 'values (?, ?)',
-						  [agents[agent].id, 
-						   'monkey'], function(err, rows, fields) {
-		  if (err) throw err;
-	});		
+		connection.query('UPDATE Inventory SET Inventory = ? WHERE name = ?',
+						[agents[agent].inventory[i],
+						agents[agent].name], function (err) {
+	  					if(err) {
+							console.log(err);
+				  		}
+		});
 	}
-
 */
 
 
 
+	//Update users location
+	connection.query('UPDATE Users SET location = ? WHERE name = ?',
+					[agents[agent].location,
+					agents[agent].name], function (err) {
+	  				if(err) {
+						console.log(err);
+			  		}
+	});
 
-	res.status(200);
-
-	res.sendFile(__dirname + "/index.html");
-});
-
-
-
-app.get('/:id', function(req, res){
-	var agent = req.session.id;
-	var inventory = agents[agent].inventory;
-	var campus = agents[agent].campus;
-	if (req.params.id == "inventory") {
-	    res.set({'Content-Type': 'application/json'});
-	    res.status(200);
-	    res.send(inventory);
-	    return;
-	}
-	if (agents[agent].location == "jail") {
-			res.set({'Content-Type': 'application/json'});
-		    res.status(200);
-		    res.send(campus[campus.length - 1]);
-		    return;
-	}
-	for (var i in campus) {
-		if (req.params.id == campus[i].id) {
-		    res.set({'Content-Type': 'application/json'});
-		    res.status(200);
-		    agents[agent].location = campus[i];
-		    res.send(campus[i]);
-		    return;
-		}
-	}
-	res.status(404);
-	res.send("not found, sorry");
-});
-
-app.get('/:id/interaction', function (req, res) {
-	var agent = req.session.id;
-	var peopleHere = [];
-	var location = req.params.id;
-	for(var i in agents) {
-		if(agents[i].location.id == location && i != agent) {
-			peopleHere.push(i);
-		}
-	}
-	res.set({'Content-Type': 'application/json'});
-	res.status(200);
-	res.send(peopleHere);
-	return;
-});
-
-app.get('/images/:name', function (req, res) {
-	res.status(200);
-	res.sendFile(__dirname + "/" + req.params.name);
-});
-
-app.delete('/:id/:item', function (req, res) {
-	var agent = req.session.id;
-	var campus = agents[agent].campus;
-	var inventory = agents[agent].inventory; 
-	for (var i in campus) {
-		if (req.params.id == campus[i].id) {
-		    res.set({'Content-Type': 'application/json'});
-		    var ix = -1;
-		    if (campus[i].what !== undefined) {
-					ix = campus[i].what.indexOf(req.params.item);
-		    }
-		    if (ix >= 0) {
-		      res.status(200);
-					inventory.push(campus[i].what[ix]); // stash
-				  res.send(inventory);
-					campus[i].what.splice(ix, 1); // room no longer has this
-					return;
-		    }
-		    res.status(200);
-		    res.send([]);
-		    return;
-		}
-	}
-	res.status(404);
-	res.send("location not found");
+	//Remove agent from memory
+	agents[req.session.id] = {};
+	res.redirect('/');
 });
 
 app.put('/send/tojail/:cookie', function (req, res) {
@@ -314,3 +353,15 @@ var dropbox = function(ix, room, req) {
 	}
 	room.what.push(item);
 };
+
+/* param: inventory - a mysql query result
+ * return: an array of strings
+ */
+function getInventory(rows) {
+	var inv = [];
+	for (var i in rows) {
+		rows[i]
+		inv.push(rows[i].Inventory);
+	}
+	return inv;
+}
